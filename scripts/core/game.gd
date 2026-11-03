@@ -10,7 +10,7 @@ const SETTINGS_PATH := "user://settings.cfg"
 
 var state: Dictionary = {}
 var settings := {
-	"sens": 1.0, "volume": 0.8, "head_bob": true, "water_fx": true, "guide": true, "shadows": true,
+	"sens": 1.0, "volume": 0.8, "fov": 85.0, "head_bob": false, "water_fx": true, "guide": true, "shadows": true,
 	"keys": {},
 }
 
@@ -32,6 +32,9 @@ func _load_settings() -> void:
 			settings[k] = cfg.get_value("game", k, settings[k])
 	for a in Data.ACTIONS:
 		settings.keys[a] = cfg.get_value("keys", a, settings.keys[a])
+	# Bản cũ bật rung camera mặc định, gây chóng mặt: tắt một lần khi nâng cấp
+	if cfg.get_value("meta", "comfort", 0) < 1:
+		settings.head_bob = false
 
 
 func save_settings() -> void:
@@ -41,6 +44,7 @@ func save_settings() -> void:
 			cfg.set_value("game", k, settings[k])
 	for a in settings.keys:
 		cfg.set_value("keys", a, settings.keys[a])
+	cfg.set_value("meta", "comfort", 1)
 	cfg.save(SETTINGS_PATH)
 
 

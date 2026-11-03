@@ -32,6 +32,8 @@ Máy yếu có thể đổi trình kết xuất sang *Compatibility* trong **Pro
 
 Mọi phím đều gán lại được trong **Cài đặt**.
 
+Nếu thấy chóng mặt khi chơi, vào **Cài đặt** để tăng góc nhìn (FOV, mặc định 85°) hoặc giảm độ nhạy chuột. Nhún camera khi đi tắt sẵn.
+
 ## Vòng chơi
 
 Nhặt rác → đổ giỏ ở bàn phân loại → chia vào ba thùng (nhựa, kim loại, rác còn lại) → nhận tiền và vật liệu

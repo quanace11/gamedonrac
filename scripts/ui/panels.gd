@@ -368,7 +368,7 @@ func _accept_tab() -> Control:
 func _settings_tab() -> Control:
 	var st := Game.settings
 	var v := Style.vbox([], 10)
-	for row in [["sens", "Độ nhạy chuột", 0.2, 3.0, 0.1], ["volume", "Âm lượng", 0.0, 1.0, 0.05]]:
+	for row in [["sens", "Độ nhạy chuột", 0.2, 3.0, 0.1], ["fov", "Góc nhìn (FOV)", 65.0, 105.0, 1.0], ["volume", "Âm lượng", 0.0, 1.0, 0.05]]:
 		var sl := HSlider.new()
 		sl.min_value = row[2]
 		sl.max_value = row[3]
@@ -376,17 +376,18 @@ func _settings_tab() -> Control:
 		sl.value = st[row[0]]
 		sl.custom_minimum_size = Vector2(320, 24)
 		sl.focus_mode = Control.FOCUS_NONE
-		var val := Style.label("%.2f" % st[row[0]], 0, Style.MUTED)
+		var fmt := "%.0f°" if row[4] >= 1.0 else "%.2f"
+		var val := Style.label(fmt % st[row[0]], 0, Style.MUTED)
 		sl.value_changed.connect(func(x):
 			st[row[0]] = x
-			val.text = "%.2f" % x
+			val.text = fmt % x
 			if row[0] == "volume":
 				Sfx.set_volume(x)
 			Game.save_settings())
 		var name := Style.label(row[1])
 		name.custom_minimum_size.x = 220
 		v.add_child(Style.hbox([name, sl, val], 16))
-	for row in [["head_bob", "Rung camera khi đi"], ["water_fx", "Hiệu ứng mặt nước"], ["guide", "Cột sáng chỉ đường nhiệm vụ"], ["shadows", "Đổ bóng"]]:
+	for row in [["head_bob", "Nhún camera khi đi (có thể gây chóng mặt)"], ["water_fx", "Hiệu ứng mặt nước"], ["guide", "Cột sáng chỉ đường nhiệm vụ"], ["shadows", "Đổ bóng"]]:
 		var cb := CheckButton.new()
 		cb.text = row[1]
 		cb.button_pressed = st[row[0]]
