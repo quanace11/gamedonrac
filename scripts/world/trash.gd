@@ -12,6 +12,9 @@ class Item:
 	var pos: Vector3
 	var yaw: float
 	var flow := -1 # chỉ số trong state.flow nếu là rác trôi
+	var heap := -1 # chỉ số nhóm nếu nằm trong đống rác
+	var above := PackedInt32Array() # các món đè lên trên, phải dọn trước
+	var lift := 0.0 # độ cao trong đống rác so với mặt nền
 
 var items: Array[Item] = []
 var flow_items: Array[Item] = []
@@ -182,7 +185,8 @@ func _generate() -> void:
 	var obs: Vector2 = Data.LEVEL.obstacle
 	var out: Vector2 = Data.LEVEL.outfall
 	var flow_i := 0
-	for g in Data.TRASH_GROUPS:
+	for gi in Data.TRASH_GROUPS.size():
+		var g: Dictionary = Data.TRASH_GROUPS[gi]
 		for k in g.n:
 			var water: bool = g.area == "water" or g.area == "flow"
 			var type: int = float_types[rng.randi() % float_types.size()] if water else rng.randi() % Data.TRASH.size()
@@ -198,11 +202,15 @@ func _generate() -> void:
 						x = rng.randf_range(g.x.x, g.x.y); z = rng.randf_range(6.3, 7.7)
 					"water":
 						x = rng.randf_range(g.x.x, g.x.y); z = rng.randf_range(g.z.x, g.z.y)
-					"pile":
+					"heap", "pile":
+						# Đống rác: phân bố đều theo thể tích một gò tròn; đống cửa xả chừa chỗ cho lốp ở giữa
 						var a := rng.randf() * TAU
-						var r := 0.75 + sqrt(rng.randf()) * 1.3
-						x = obs.x + cos(a) * r * 1.7
-						z = clampf(obs.y + sin(a) * r, 4.15, 7.8)
+						var r0 := 0.8 if g.area == "pile" else 0.0
+						var rr: float = r0 + sqrt(rng.randf()) * (g.r - r0)
+						x = g.c.x + cos(a) * rr * (1.5 if g.area == "pile" else 1.0)
+						z = g.c.y + sin(a) * rr
+						if g.area == "pile":
+							z = clampf(z, 4.15, 7.8)
 					_:
 						x = out.x; z = out.y
 				var blocked := false
@@ -221,11 +229,31 @@ func _generate() -> void:
 			it.water = water
 			it.pos = Vector3(x, 0, z)
 			it.yaw = rng.randf() * TAU
+			if g.area == "heap" or g.area == "pile":
+				var d: float = Vector2(x - g.c.x, z - g.c.y).length() / g.r
+				it.heap = gi
+				it.lift = g.h * maxf(0.0, 1.0 - d * d) * pow(rng.randf(), 0.6)
 			if g.area == "flow":
 				it.flow = flow_i
 				flow_i += 1
 				flow_items.append(it)
 			items.append(it)
+	# Món nào đè lên món nào trong cùng đống (gần theo phương ngang, cao hơn)
+	var by_heap := {}
+	for i in items.size():
+		if items[i].heap >= 0:
+			if not by_heap.has(items[i].heap):
+				by_heap[items[i].heap] = []
+			by_heap[items[i].heap].append(i)
+	for i in items.size():
+		var it := items[i]
+		if it.heap < 0:
+			continue
+		for j in by_heap[it.heap]:
+			var o := items[j]
+			if j != i and o.lift > it.lift + 0.06 \
+					and Vector2(o.pos.x - it.pos.x, o.pos.z - it.pos.z).length_squared() < 0.09:
+				it.above.append(j)
 
 
 # ---------- Trạng thái ----------
@@ -243,6 +271,8 @@ func _write(i: int, scale := 1.0, t := 0.0) -> void:
 		if t > 0.0:
 			y += sin(t * 1.6 + it.yaw * 5.0) * 0.03
 			tilt = sin(t * 1.2 + it.yaw * 3.0) * 0.12
+	elif it.heap >= 0:
+		tilt = sin(it.yaw * 13.0) * 0.7 # rác chất đống nằm nghiêng ngả
 	var b := Basis.from_euler(Vector3(tilt, it.yaw, tilt * 0.5)).scaled(Vector3.ONE * scale)
 	_mm[it.type].set_instance_transform(_slot[i], Transform3D(b, Vector3(it.pos.x, y, it.pos.z)))
 
@@ -259,7 +289,7 @@ func restore() -> void:
 		if it.flow >= 0:
 			var f: Vector3 = s.flow[it.flow]
 			it.pos = Vector3(f.y, 0, f.z) if f.x > 0 else Vector3(Data.LEVEL.outfall.x, 0, Data.LEVEL.outfall.y)
-		it.pos.y = Level.WATER_Y if it.water else Level.surface_y(it.pos.x, it.pos.z)
+		it.pos.y = Level.WATER_Y if it.water else Level.surface_y(it.pos.x, it.pos.z) + it.lift
 		if s.items[i] == 1:
 			collected_mass += Data.trash_mass(it.type)
 			zones[it.zone].done += 1
@@ -273,7 +303,7 @@ func pick(origin: Vector3, dir: Vector3, reach: float, radius: float, prefer_nea
 	var best := -1
 	var best_score := INF
 	for i in items.size():
-		if is_hidden(i):
+		if is_hidden(i) or covered(i):
 			continue
 		var v := items[i].pos + Vector3(0, 0.12, 0) - origin
 		var t := v.dot(dir)
@@ -287,6 +317,25 @@ func pick(origin: Vector3, dir: Vector3, reach: float, radius: float, prefer_nea
 			best_score = score
 			best = i
 	return best
+
+
+## Món i còn bị món khác đè lên (trong đống rác)?
+func covered(i: int) -> bool:
+	for j in items[i].above:
+		if Game.state.items[j] == 0:
+			return true
+	return false
+
+
+## Đồ sưu tầm i còn bị vùi dưới rác?
+func buried(i: int) -> bool:
+	if not Data.COLLECTIBLES[i].get("buried", false):
+		return false
+	var p: Vector3 = Data.COLLECTIBLES[i].pos
+	for k in items.size():
+		if items[k].heap >= 0 and not is_hidden(k) and Vector2(items[k].pos.x - p.x, items[k].pos.z - p.z).length_squared() < 0.5:
+			return true
+	return false
 
 
 ## Thu gom vật i; target trả về điểm bay tới (giỏ hoặc máy).
@@ -338,7 +387,7 @@ func pile_near(p: Vector2, r: float) -> int:
 
 func pick_gem(origin: Vector3, dir: Vector3, reach: float) -> int:
 	for i in _gems.size():
-		if not _gems[i].visible:
+		if not _gems[i].visible or buried(i):
 			continue
 		var v := _gems[i].position + Vector3(0, 0.15, 0) - origin
 		var t := v.dot(dir)

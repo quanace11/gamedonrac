@@ -4,6 +4,10 @@ extends Node3D
 
 const EYE := 1.6
 const RADIUS := 0.25
+const WALK := 4.0
+const SPRINT := 6.5
+const ACCEL := 24.0 # m/s² – tăng tốc và dừng mềm, tránh giật hình gây chóng mặt
+const BOB_AMP := 0.012
 
 var trash: Trash
 var machines: Machines
@@ -18,6 +22,9 @@ var aim := {"text": "", "far": false, "interact": "", "build": {}}
 
 var _eye := EYE
 var _bob := 0.0
+var _bob_amp := 0.0
+var _vel := Vector2.ZERO
+var _step_dist := 0.0
 var _swing := 0.0
 var _use_timer := 0.0
 var _full_warn := -10.0
@@ -30,7 +37,7 @@ var _held := {} # dụng cụ cầm tay: tên → Node3D
 
 func _ready() -> void:
 	cam = Camera3D.new()
-	cam.fov = 72.0
+	cam.fov = Game.settings.fov
 	cam.near = 0.05
 	cam.far = 500.0
 	add_child(cam)
@@ -41,7 +48,7 @@ func _unhandled_input(e: InputEvent) -> void:
 	if not active:
 		return
 	if e is InputEventMouseMotion:
-		_look += e.relative
+		_look += e.screen_relative # không phụ thuộc tỉ lệ cửa sổ
 	elif e is InputEventMouseButton and e.pressed:
 		match e.button_index:
 			MOUSE_BUTTON_WHEEL_UP: _wheel -= 1
@@ -63,7 +70,7 @@ func _build_held() -> void:
 	mesh_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	mesh_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 
-	for k in ["net", "hook"]:
+	for k in ["net", "hook", "vacuum"]:
 		var root := Node3D.new()
 		root.position = Vector3(0.36, -0.42, -0.5)
 		root.rotation = Vector3(0.2, 0.18, 0)
@@ -77,7 +84,13 @@ func _build_held() -> void:
 		root.add_child(pole)
 		var head := MeshInstance3D.new()
 		var tm := TorusMesh.new()
-		if k == "net":
+		if k == "vacuum":
+			# Ống hút: thân dày, miệng loe
+			pm.top_radius = 0.035; pm.bottom_radius = 0.045
+			pole.material_override = steel
+			tm.inner_radius = 0.07; tm.outer_radius = 0.1
+			head.position = Vector3(0, 0, -0.92)
+		elif k == "net":
 			tm.inner_radius = 0.17; tm.outer_radius = 0.19
 			var disc := MeshInstance3D.new()
 			var dm := CylinderMesh.new()
@@ -147,18 +160,31 @@ func set_tool(id: String) -> void:
 func _move(delta: float) -> bool:
 	var f := Input.get_action_strength("forward") - Input.get_action_strength("back")
 	var r := Input.get_action_strength("right") - Input.get_action_strength("left")
-	if f == 0.0 and r == 0.0:
+	if not active:
+		f = 0.0
+		r = 0.0
+	var target := Vector2.ZERO
+	if f != 0.0 or r != 0.0:
+		var speed := (SPRINT if Input.is_action_pressed("sprint") else WALK) * (0.55 if machines.hooked else 1.0)
+		target = Vector2(-sin(yaw) * f + cos(yaw) * r, -cos(yaw) * f - sin(yaw) * r).normalized() * speed
+	_vel = _vel.move_toward(target, ACCEL * delta)
+	if _vel.length_squared() < 0.0001:
+		_vel = Vector2.ZERO
 		return false
-	var speed := (7.0 if Input.is_action_pressed("sprint") else 4.5) * (0.55 if machines.hooked else 1.0)
-	var v := Vector2(-sin(yaw) * f + cos(yaw) * r, -cos(yaw) * f - sin(yaw) * r).normalized() * speed * delta
+	var v := _vel * delta
+	var start := Vector2(pos.x, pos.z)
 	var here := _ground()
 	var ok := func(x: float, z: float) -> bool:
 		var g := Level.ground_at(x, z)
-		return not is_nan(g) and g - here < 0.45
+		return not is_nan(g) and g - here < 0.45 and machines.rope_ok(Vector2(pos.x, pos.z), Vector2(x, z))
 	if ok.call(pos.x + v.x + signf(v.x) * RADIUS, pos.z):
 		pos.x += v.x
+	else:
+		_vel.x = 0.0
 	if ok.call(pos.x, pos.z + v.y + signf(v.y) * RADIUS):
 		pos.z += v.y
+	else:
+		_vel.y = 0.0
 	for sd in machines.solids():
 		var c: Vector2 = sd[0]
 		var d := Vector2(pos.x, pos.z) - c
@@ -169,11 +195,16 @@ func _move(delta: float) -> bool:
 			if ok.call(n.x, n.y):
 				pos.x = n.x
 				pos.z = n.y
-	return true
+	# Tiếng bước chân nhẹ mỗi 0,7 m trên mặt đất
+	_step_dist += start.distance_to(Vector2(pos.x, pos.z))
+	if _step_dist > 0.7:
+		_step_dist = 0.0
+		Sfx.play("step", 0.12)
+	return _vel.length() > 0.5
 
 
 func _place_camera() -> void:
-	var bob := sin(_bob) * 0.04 if Game.settings.head_bob else 0.0
+	var bob := sin(_bob) * _bob_amp if Game.settings.head_bob else 0.0
 	cam.position = Vector3(pos.x, _eye + bob, pos.z)
 	cam.basis = Basis.from_euler(Vector3(pitch, yaw, 0))
 	dir = -cam.basis.z
@@ -211,6 +242,7 @@ func update(delta: float) -> void:
 		if Input.is_action_just_pressed("tool1"): set_tool("hand")
 		if Input.is_action_just_pressed("tool2"): set_tool("net")
 		if Input.is_action_just_pressed("tool3"): set_tool("hook")
+		if Input.is_action_just_pressed("tool4"): set_tool("vacuum")
 		if _wheel != 0:
 			var owned := Data.TOOL_ORDER.filter(func(t): return s.tools[t])
 			set_tool(owned[posmod(owned.find(s.tool) + signi(_wheel), owned.size())])
@@ -219,20 +251,24 @@ func update(delta: float) -> void:
 			Sfx.play("ui")
 			if machines.build_mode:
 				Game.show_hint("build_mode")
-		moving = _move(delta)
+	moving = _move(delta)
 	_look = Vector2.ZERO
 	_wheel = 0
 
 	# Máy ảnh và dụng cụ cầm tay
-	_eye = lerpf(_eye, _ground() + EYE, minf(1.0, delta * 12.0))
-	_bob = _bob + delta * (11.0 if Input.is_action_pressed("sprint") else 9.0) if moving else 0.0
+	_eye = lerpf(_eye, _ground() + EYE, minf(1.0, delta * 8.0))
+	# Nhún nhẹ theo bước, biên độ tăng giảm dần thay vì bật tắt đột ngột
+	_bob += delta * _vel.length() * 1.9
+	_bob_amp = move_toward(_bob_amp, BOB_AMP if moving else 0.0, delta * 0.05)
+	cam.fov = Game.settings.fov
 	_place_camera()
 	_swing = maxf(0.0, _swing - delta * 4.0)
 	for t in _held:
 		var h: Node3D = _held[t]
 		h.visible = s.tool == t and not machines.build_mode
-		h.position = Vector3(0.36 + sin(_bob * 0.5) * 0.015, -0.42 + absf(cos(_bob * 0.5)) * 0.012, -0.5)
-		h.rotation.x = 0.2 - _swing * 0.7
+		var sway := _bob_amp / BOB_AMP * 0.006
+		h.position = Vector3(0.36 + sin(_bob * 0.5) * sway, -0.42 + absf(cos(_bob * 0.5)) * sway, -0.5)
+		h.rotation.x = 0.2 - _swing * 0.5
 
 	# Tâm ngắm
 	var tool: Dictionary = Data.TOOLS[s.tool]
@@ -285,6 +321,12 @@ func update(delta: float) -> void:
 				machines.try_hook(eye, dir, tool.reach)
 		elif target >= 0 and (_click or (tool.rate > 0.0 and Input.is_action_pressed("use") and _use_timer <= 0.0)):
 			_collect(target)
+			# Máy hút: mỗi nhịp hút thêm vài món quanh tâm ngắm
+			for k in tool.get("burst", 1) - 1:
+				var more := trash.pick(eye, dir, tool.reach, tool.radius, false)
+				if more < 0:
+					break
+				_collect(more)
 			_use_timer = tool.rate
 	_click = false
 

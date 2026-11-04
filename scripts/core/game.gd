@@ -10,7 +10,7 @@ const SETTINGS_PATH := "user://settings.cfg"
 
 var state: Dictionary = {}
 var settings := {
-	"sens": 1.0, "volume": 0.8, "head_bob": true, "water_fx": true, "guide": true, "shadows": true,
+	"sens": 1.0, "volume": 0.8, "fov": 85.0, "head_bob": false, "water_fx": true, "guide": true, "shadows": true,
 	"keys": {},
 }
 
@@ -32,6 +32,9 @@ func _load_settings() -> void:
 			settings[k] = cfg.get_value("game", k, settings[k])
 	for a in Data.ACTIONS:
 		settings.keys[a] = cfg.get_value("keys", a, settings.keys[a])
+	# Bản cũ bật rung camera mặc định, gây chóng mặt: tắt một lần khi nâng cấp
+	if cfg.get_value("meta", "comfort", 0) < 1:
+		settings.head_bob = false
 
 
 func save_settings() -> void:
@@ -41,6 +44,7 @@ func save_settings() -> void:
 			cfg.set_value("game", k, settings[k])
 	for a in settings.keys:
 		cfg.set_value("keys", a, settings.keys[a])
+	cfg.set_value("meta", "comfort", 1)
 	cfg.save(SETTINGS_PATH)
 
 
@@ -75,10 +79,11 @@ func new_state(slot: String, item_count: int, flow_count: int) -> Dictionary:
 	return {
 		"v": Data.SAVE_VERSION, "slot": slot,
 		"money": Data.ECON.start_money, "mat": 0,
-		"tool": "hand", "tools": {"hand": true, "net": false, "hook": false},
+		"tool": "hand", "tools": {"hand": true, "net": false, "hook": false, "vacuum": false},
 		"stock": {"conveyor": false, "skimmer": false, "plant": false},
 		"placed": {"conveyor": false, "skimmer": false, "plant": false},
-		"upgrades": {"up_basket": false, "up_belt": false, "up_skim_bin": false},
+		"upgrades": {"up_basket": false, "up_belt": false, "up_skim_bin": false, "up_basket2": false, "up_auto_sell": false, "up_pipe": false},
+		"robots": [], # [{x, z, load: []}]
 		"items": items, "flow": flow, "flow_timer": 0.0,
 		"basket": [], "table": [], "crate": [],
 		"conveyor": {"hopper": [], "transit": [], "out": {"plastic": [], "metal": [], "other": []}, "paused": false, "feed": 0.0, "blocked": ""},
@@ -169,6 +174,8 @@ func process_batch(types: Array, auto: bool) -> Vector2i:
 
 
 func basket_cap() -> int:
+	if state.upgrades.up_basket2:
+		return Data.ECON.basket_up2
 	return Data.ECON.basket_up if state.upgrades.up_basket else Data.ECON.basket
 
 
@@ -184,6 +191,8 @@ func pending_count() -> int:
 	var c: Dictionary = state.conveyor
 	var n: int = state.basket.size() + state.crate.size() + state.table.size() + state.skimmer.bin.size()
 	n += c.hopper.size() + c.transit.size()
+	for r in state.robots:
+		n += r.load.size()
 	for k in Data.CAT_KEYS:
 		n += c.out[k].size()
 	return n

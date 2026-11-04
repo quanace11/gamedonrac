@@ -276,6 +276,8 @@ func _shop_lock(it: Dictionary) -> String:
 		return "Mở sau khi kéo vật cản khỏi cửa xả"
 	if it.get("unlock") == "skimmer" and not s.quests.get("skimmer", false):
 		return "Mở sau khi lắp máy vớt"
+	if it.get("unlock") == "belt" and not s.quests.get("belt", false):
+		return "Mở sau khi lắp băng chuyền"
 	return ""
 
 
@@ -285,9 +287,15 @@ func _shop_tab() -> Control:
 	for k in Data.SHOP:
 		var it: Dictionary = Data.SHOP[k]
 		var lock := _shop_lock(it)
-		var owned: bool = s.tools[k] if it.kind == "tool" else (s.upgrades[k] if it.kind == "upgrade" else (s.placed[k] or s.stock[k]))
+		var owned: bool
+		match it.kind:
+			"tool": owned = s.tools[k]
+			"upgrade": owned = s.upgrades[k]
+			"fleet": owned = s.robots.size() >= it.max
+			_: owned = s.placed[k] or s.stock[k]
+		var title: String = it.name + ((" (%d/%d)" % [s.robots.size(), it.max]) if it.kind == "fleet" else "")
 		var info := Style.vbox([
-			Style.hbox([Style.label(it.name, 18), Style.label("Hạ tầng" if it.kind == "machine" else "Thuộc đội", 12, Style.ACCENT)]),
+			Style.hbox([Style.label(title, 18), Style.label("Hạ tầng" if it.kind == "machine" else "Thuộc đội", 12, Style.ACCENT)]),
 			Style.label(it.desc, 14, Style.MUTED, true)], 4)
 		info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		var price := Style.label("%d tiền%s" % [it.price, (" + %s vật liệu" % Game.fmt_mat(it.mat)) if it.mat > 0 else ""], 15, Color("#ffd166"))
@@ -326,6 +334,8 @@ func _buy(k: String) -> void:
 			s.tool = k
 		"upgrade":
 			s.upgrades[k] = true
+		"fleet":
+			main.robots.add_robot()
 		_:
 			s.stock[k] = true
 			Game.show_hint("buy")
@@ -368,7 +378,7 @@ func _accept_tab() -> Control:
 func _settings_tab() -> Control:
 	var st := Game.settings
 	var v := Style.vbox([], 10)
-	for row in [["sens", "Độ nhạy chuột", 0.2, 3.0, 0.1], ["volume", "Âm lượng", 0.0, 1.0, 0.05]]:
+	for row in [["sens", "Độ nhạy chuột", 0.2, 3.0, 0.1], ["fov", "Góc nhìn (FOV)", 65.0, 105.0, 1.0], ["volume", "Âm lượng", 0.0, 1.0, 0.05]]:
 		var sl := HSlider.new()
 		sl.min_value = row[2]
 		sl.max_value = row[3]
@@ -376,17 +386,18 @@ func _settings_tab() -> Control:
 		sl.value = st[row[0]]
 		sl.custom_minimum_size = Vector2(320, 24)
 		sl.focus_mode = Control.FOCUS_NONE
-		var val := Style.label("%.2f" % st[row[0]], 0, Style.MUTED)
+		var fmt := "%.0f°" if row[4] >= 1.0 else "%.2f"
+		var val := Style.label(fmt % st[row[0]], 0, Style.MUTED)
 		sl.value_changed.connect(func(x):
 			st[row[0]] = x
-			val.text = "%.2f" % x
+			val.text = fmt % x
 			if row[0] == "volume":
 				Sfx.set_volume(x)
 			Game.save_settings())
 		var name := Style.label(row[1])
 		name.custom_minimum_size.x = 220
 		v.add_child(Style.hbox([name, sl, val], 16))
-	for row in [["head_bob", "Rung camera khi đi"], ["water_fx", "Hiệu ứng mặt nước"], ["guide", "Cột sáng chỉ đường nhiệm vụ"], ["shadows", "Đổ bóng"]]:
+	for row in [["head_bob", "Nhún camera khi đi (có thể gây chóng mặt)"], ["water_fx", "Hiệu ứng mặt nước"], ["guide", "Cột sáng chỉ đường nhiệm vụ"], ["shadows", "Đổ bóng"]]:
 		var cb := CheckButton.new()
 		cb.text = row[1]
 		cb.button_pressed = st[row[0]]
