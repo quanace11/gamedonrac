@@ -12,7 +12,7 @@ const HINTS := {
 	"build_mode": "Chế độ đặt máy: khung xanh là vị trí lắp hợp lệ, khung đỏ là máy có thể tháo về kho. Bấm B để thoát.",
 	"conveyor": "Băng chuyền đã lắp. Bấm E tại máy để nạp giỏ; máy tự phân loại. Nhớ bấm Xử lý đầu ra để nhận tiền.",
 	"hook": "Bạn nhận được Móc kéo (phím 3). Dọn đống rác quanh lốp xe tải cũ ở cửa xả, rồi nhắm và nhấp để móc.",
-	"drag": "Đi về Điểm nhận vật lớn (vòng xanh lá gần khu C), vật cản sẽ bị kéo theo. Nhấp lần nữa để thả.",
+	"drag": "Đã móc lốp. Đi về Điểm nhận vật lớn (vòng xanh lá gần khu C): lốp nặng trượt theo sau, kéo nó vào trong vòng. Nhấp lần nữa để thả dây.",
 	"flow": "Rác bị kẹt sau cửa xả đang trôi ra và dồn vào vùng xoáy ở khu E. Lắp máy vớt ở đó.",
 	"skimmer": "Máy vớt gom rác vào thùng cạnh máy. Bấm E để lấy thùng, mang tới phễu băng chuyền.",
 	"crate": "Bạn đang mang thùng máy vớt. Bấm E tại băng chuyền (Nạp) hoặc bàn phân loại để đổ.",

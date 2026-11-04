@@ -4,6 +4,9 @@ extends Node3D
 ## vật cản cửa xả kéo bằng móc. Logic máy trả về dữ liệu trạng thái để giao diện hiển thị.
 
 const STATE_NAMES := {"running": "Đang chạy", "idle": "Chờ", "starved": "Thiếu đầu vào", "full": "Đầu ra đầy", "paused": "Tạm dừng", "done": "Hoàn tất"}
+const ROPE := 3.0 # dây căng từ độ dài này thì lốp bắt đầu trượt theo
+const ROPE_MAX := 3.8 # người chơi không đi xa lốp hơn
+const RECEIVE_R := 1.6 # bán kính vòng điểm nhận
 const BELT_EXIT := {"metal": 0.35, "plastic": 0.7, "other": 1.0} # vị trí mô-đun trên băng (0..1)
 
 var main: Node # main.gd: toast, hint, ui
@@ -28,7 +31,11 @@ var _ring: MeshInstance3D
 var _bubbles: CPUParticles3D
 var _sparks: CPUParticles3D
 var _tyre: Node3D
-var _rope: MeshInstance3D
+var _rope: MultiMeshInstance3D
+var _tyre_y := 0.0
+var _tyre_yaw := 0.0
+var _tilt := 0.0
+var _slide := 0.0
 var _ghost_ok: StandardMaterial3D
 var _ghost_red: StandardMaterial3D
 
@@ -244,17 +251,27 @@ func build() -> void:
 		_ghosts[k] = g
 
 	# ---------- Vật cản cửa xả ----------
+	# Lốp nằm phẳng, tâm đặt đúng gốc của nút để vị trí lưu trùng với hình
 	_tyre = Node3D.new()
 	var ty := MeshInstance3D.new()
 	ty.mesh = Assets.mesh("old_tyre", [], 1.4)
+	var ab := ty.mesh.get_aabb()
 	ty.rotation.x = PI / 2
-	ty.position.y = 0.15
+	ty.position = Vector3(0, ab.size.z / 2.0, -ab.size.y / 2.0)
 	_tyre.add_child(ty)
 	add_child(_tyre)
-	var rope_mesh := CylinderMesh.new()
-	rope_mesh.top_radius = 0.02; rope_mesh.bottom_radius = 0.02; rope_mesh.height = 1.0
-	_rope = _part(self, rope_mesh, _mat(Color(0.95, 0.75, 0.1), 0.7), Vector3.ZERO)
+	_tyre_y = Level.ground_at(Data.LEVEL.obstacle.x, Data.LEVEL.obstacle.y)
+	var seg := CylinderMesh.new()
+	seg.top_radius = 0.018; seg.bottom_radius = 0.018; seg.height = 1.0; seg.radial_segments = 6; seg.rings = 1
+	var rmm := MultiMesh.new()
+	rmm.transform_format = MultiMesh.TRANSFORM_3D
+	rmm.mesh = seg
+	rmm.instance_count = 16
+	_rope = MultiMeshInstance3D.new()
+	_rope.multimesh = rmm
+	_rope.material_override = _mat(Color(0.95, 0.75, 0.1), 0.7)
 	_rope.visible = false
+	add_child(_rope)
 
 	_make_interactables()
 
@@ -367,7 +384,9 @@ func _update_plant(delta: float) -> void:
 		p.progress = minf(1.0, p.progress + delta * dev_speed / Data.ECON.plant_duration)
 
 
-func _update_obstacle(cam: Vector3) -> void:
+## Dây kéo: lốp bị kéo khi dây căng quá ROPE; người chơi không đi xa lốp quá ROPE_MAX
+## (lốp nặng giữ lại), nên lốp luôn trượt theo sau như kéo thật.
+func _update_obstacle(delta: float, cam: Vector3) -> void:
 	var o: Dictionary = _s().obstacle
 	_tyre.visible = not o.done
 	if o.done:
@@ -375,38 +394,83 @@ func _update_obstacle(cam: Vector3) -> void:
 		hooked = false
 		return
 	var p: Vector2 = o.pos
+	var moved := 0.0
+	var hp := Vector2(cam.x, cam.z)
 	if hooked:
-		var d := p - Vector2(cam.x, cam.z)
+		var d := hp - p
 		var dist := d.length()
-		if dist > 12.0:
+		if dist > 12.0: # chỉ xảy ra khi dịch chuyển (chế độ phát triển)
 			hooked = false
 			Game.say("Dây móc bị tuột – móc lại vật cản.", "warn")
-		elif dist > 3.0:
-			var n := Vector2(cam.x, cam.z) + d / dist * 3.0
-			if not is_nan(Level.ground_at(n.x, n.y)):
-				o.pos = n
-			elif not is_nan(Level.ground_at(n.x, p.y)):
-				o.pos = Vector2(n.x, p.y)
-			elif not is_nan(Level.ground_at(p.x, n.y)):
-				o.pos = Vector2(p.x, n.y)
-		var rv: Vector2 = Data.LEVEL.receive
-		# Xong khi vật cản tới điểm nhận, hoặc người kéo đã đứng ở điểm nhận và vật cản ngay sau lưng
-		if o.pos.distance_to(rv) < 1.8 or (Vector2(cam.x, cam.z).distance_to(rv) < 2.0 and o.pos.distance_to(rv) < 4.0):
+		elif dist > ROPE:
+			var n := p + d / dist * (dist - ROPE)
+			for c in [n, Vector2(n.x, p.y), Vector2(p.x, n.y)]:
+				if _tyre_can_go(p, c):
+					o.pos = c
+					break
+			moved = p.distance_to(o.pos)
+			# Lốp quay đầu theo hướng kéo
+			_tyre_yaw = lerp_angle(_tyre_yaw, atan2(d.x, d.y), minf(1.0, delta * 4.0))
+		if o.pos.distance_to(Data.LEVEL.receive) < RECEIVE_R:
 			_finish_obstacle()
 			return
 	if is_nan(Level.ground_at(o.pos.x, o.pos.y)):
 		o.pos = Data.LEVEL.obstacle # điểm phục hồi hợp lệ
 	var g := Level.ground_at(o.pos.x, o.pos.y)
-	_tyre.position = Vector3(o.pos.x, g, o.pos.y)
+	_tyre_y = g if absf(_tyre_y - g) > 1.0 else lerpf(_tyre_y, g, minf(1.0, delta * 10.0))
+	# Bụi và tiếng sột soạt khi lốp trượt trên nền
+	_slide += moved
+	if _slide > 0.7:
+		_slide = 0.0
+		trash.puff(Vector3(o.pos.x, _tyre_y + 0.05, o.pos.y), false)
+		Sfx.play("drag", 0.1)
+	var tilt := clampf(moved / maxf(delta, 0.001) * 0.04, 0.0, 0.18) # mép trước hơi nhấc lên khi bị kéo
+	_tilt = lerpf(_tilt, tilt, minf(1.0, delta * 6.0))
+	_tyre.position = Vector3(o.pos.x, _tyre_y, o.pos.y)
+	_tyre.basis = Basis(Vector3.UP, _tyre_yaw) * Basis(Vector3.RIGHT, -_tilt)
 	_rope.visible = hooked
 	if hooked:
-		var a := cam + Vector3(0, -0.5, 0)
-		var b := _tyre.position + Vector3(0, 0.3, 0)
-		_rope.position = (a + b) / 2.0
-		_rope.scale = Vector3(1, a.distance_to(b), 1)
-		var up := (b - a).normalized()
-		var side := up.cross(Vector3.FORWARD if absf(up.z) < 0.9 else Vector3.RIGHT).normalized()
-		_rope.basis = Basis(side, up, side.cross(up)).scaled(Vector3(1, a.distance_to(b), 1))
+		_draw_rope(cam)
+
+
+## Dây gồm nhiều đoạn, võng xuống khi chùng và thẳng khi căng.
+func _draw_rope(cam: Vector3) -> void:
+	var b := _tyre.position + _tyre.basis * Vector3(0, 0.34, 0.6) # móc vào mép lốp phía người kéo
+	var flat := Vector3(b.x - cam.x, 0, b.z - cam.z).normalized()
+	var a := cam + Vector3(0, -0.75, 0) + flat * 0.35 # tay người chơi
+	var span := a.distance_to(b)
+	var sag := clampf((ROPE + 0.4 - span) * 0.45, 0.02, 0.9)
+	var mm := _rope.multimesh
+	var prev := a
+	for i in mm.instance_count:
+		var t := float(i + 1) / mm.instance_count
+		var q := a.lerp(b, t) - Vector3(0, sag * 4.0 * t * (1.0 - t), 0)
+		var seg := q - prev
+		var len := seg.length()
+		var up := seg / maxf(len, 0.0001)
+		var side := up.cross(Vector3.UP if absf(up.y) < 0.95 else Vector3.RIGHT).normalized()
+		mm.set_instance_transform(i, Transform3D(Basis(side, up * len, side.cross(up)), (prev + q) / 2.0))
+		prev = q
+
+
+func _tyre_can_go(from: Vector2, to: Vector2) -> bool:
+	var g := Level.ground_at(to.x, to.y)
+	var g0 := Level.ground_at(from.x, from.y)
+	if is_nan(g) or (not is_nan(g0) and absf(g - g0) > 0.5):
+		return false
+	for sd in solids():
+		if to.distance_to(sd[0]) < sd[1] + 0.5:
+			return false
+	return true
+
+
+## Người chơi đang kéo lốp có được bước tới `to` không (không đi xa quá dây).
+func rope_ok(from: Vector2, to: Vector2) -> bool:
+	if not hooked:
+		return true
+	var p: Vector2 = _s().obstacle.pos
+	var d := to.distance_to(p)
+	return d <= ROPE_MAX or d <= from.distance_to(p)
 
 
 func _finish_obstacle() -> void:
@@ -586,7 +650,7 @@ func solids() -> Array:
 func _aim_tyre(origin: Vector3, dir: Vector3, reach: float) -> bool:
 	if _s().obstacle.done:
 		return false
-	var v := _tyre.position + Vector3(0, 0.3, 0) - origin
+	var v := _tyre.position + Vector3(0, 0.2, 0) - origin
 	var t := v.dot(dir)
 	return t > 0.0 and t < reach and v.length_squared() - t * t < 1.2
 
@@ -609,6 +673,7 @@ func try_hook(origin: Vector3, dir: Vector3, reach: float) -> void:
 		Sfx.play("error")
 		return
 	hooked = true
+	_tyre_yaw = _tyre.rotation.y
 	Sfx.play("hook")
 	Game.show_hint("drag")
 
@@ -657,7 +722,7 @@ func update(delta: float, t: float, cam: Vector3) -> void:
 	_update_conveyor(delta)
 	_update_skimmer(delta)
 	_update_plant(delta)
-	_update_obstacle(cam)
+	_update_obstacle(delta, cam)
 
 	for k in _groups:
 		_groups[k].visible = s.placed[k]

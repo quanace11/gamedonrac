@@ -170,7 +170,7 @@ func _move(delta: float) -> bool:
 	var here := _ground()
 	var ok := func(x: float, z: float) -> bool:
 		var g := Level.ground_at(x, z)
-		return not is_nan(g) and g - here < 0.45
+		return not is_nan(g) and g - here < 0.45 and machines.rope_ok(Vector2(pos.x, pos.z), Vector2(x, z))
 	if ok.call(pos.x + v.x + signf(v.x) * RADIUS, pos.z):
 		pos.x += v.x
 	else:

@@ -10,28 +10,33 @@ var _pool: Array[AudioStreamPlayer] = []
 var _hums := {}
 var _ambient: AudioStreamPlayer
 var _rng := RandomNumberGenerator.new()
+var _last := {} # âm → thời điểm phát gần nhất (ms), tránh dồn dập khi vớt liên tục
 
 
 func _ready() -> void:
 	_rng.seed = 7
 	_sounds = {
-		# Nhặt nhựa: tiếng "bóp" nhẹ
-		"plastic": _mix(0.14, [_sweep(700, 380, 0.11, 0.35), _hiss(0.08, 0.25, 0.10)]),
-		# Lon kim loại: tiếng "keng" nhỏ, tắt nhanh
-		"metal": _mix(0.35, [_bell(1480, 0.28, 0.22), _bell(2230, 0.16, 0.12), _bell(3010, 0.1, 0.06)]),
-		# Rác còn lại: tiếng "bộp" trầm
-		"other": _mix(0.16, [_sweep(190, 120, 0.14, 0.45), _hiss(0.03, 0.08, 0.2)]),
-		"splash": _mix(0.5, [_hiss(0.05, 0.42, 0.45), _blips(5, 0.35, 0.12)]),
-		"dump": _mix(0.55, [_sweep(130, 70, 0.4, 0.5), _rattle(0.4, 0.18)]),
+		# Âm nhặt: vào chậm (12–30 ms), không có nhiễu ở đầu âm nên không nghe như tiếng nổ
+		# Nhựa: tiếng "túc" mềm
+		"plastic": _mix(0.16, [_sweep(560, 430, 0.14, 0.16, 0.012), _hiss(0.015, 0.12, 0.03, 0.03)]),
+		# Kim loại: tiếng "ting" nhỏ
+		"metal": _mix(0.3, [_bell(1250, 0.2, 0.08, 0.008), _bell(1870, 0.12, 0.03, 0.008)]),
+		# Rác còn lại: tiếng "bục" trầm, nhỏ
+		"other": _mix(0.16, [_sweep(250, 190, 0.14, 0.18, 0.015)]),
+		# Vớt dưới nước: tiếng "lõm bõm" nhẹ
+		"splash": _mix(0.45, [_hiss(0.012, 0.4, 0.3, 0.06), _blips(3, 0.3, 0.08)]),
+		"dump": _mix(0.55, [_sweep(130, 80, 0.4, 0.3, 0.02), _rattle(0.4, 0.06)]),
 		"coin": _mix(0.5, [_bell(1318.5, 0.45, 0.16), _delay(_bell(1760, 0.4, 0.16), 0.07)]),
 		"error": _mix(0.32, [_bell(330, 0.14, 0.22), _delay(_bell(262, 0.16, 0.22), 0.12)]),
 		"ui": _mix(0.05, [_bell(1100, 0.04, 0.08)]),
-		"place": _mix(0.4, [_sweep(150, 80, 0.32, 0.5), _hiss(0.04, 0.2, 0.18)]),
-		"hook": _mix(0.25, [_whoosh(0.22, 0.25), _delay(_bell(900, 0.1, 0.1), 0.15)]),
+		"place": _mix(0.4, [_sweep(150, 90, 0.32, 0.3, 0.02), _hiss(0.015, 0.2, 0.05, 0.04)]),
+		"hook": _mix(0.25, [_whoosh(0.22, 0.1), _delay(_bell(900, 0.1, 0.1), 0.15)]),
 		"collect": _mix(0.6, [_bell(659.3, 0.3, 0.16), _delay(_bell(880, 0.3, 0.16), 0.1), _delay(_bell(1318.5, 0.35, 0.14), 0.2)]),
 		"fanfare": _mix(1.4, [_chime(523.3, 0.0), _chime(659.3, 0.14), _chime(784.0, 0.28), _chime(1046.5, 0.42), _delay(_bell(523.3, 0.9, 0.08), 0.42)]),
 		# Bước chân: rất nhẹ, trầm
-		"step": _mix(0.1, [_hiss(0.02, 0.08, 0.10), _sweep(95, 70, 0.07, 0.12)]),
+		# Lốp cao su cọ xuống nền khi bị kéo
+		"drag": _mix(0.45, [_hiss(0.03, 0.4, 0.07, 0.08), _sweep(80, 65, 0.35, 0.08, 0.06)]),
+		"step": _mix(0.12, [_hiss(0.01, 0.1, 0.05, 0.02), _sweep(95, 75, 0.09, 0.08, 0.015)]),
 	}
 	for i in 12:
 		var p := AudioStreamPlayer.new()
@@ -52,6 +57,10 @@ func set_volume(v: float) -> void:
 func play(name: String, pitch_jitter := 0.04) -> void:
 	if not _sounds.has(name):
 		return
+	var now := Time.get_ticks_msec()
+	if now - int(_last.get(name, -1000)) < 90:
+		return
+	_last[name] = now
 	for p in _pool:
 		if not p.playing:
 			p.stream = _sounds[name]
@@ -85,17 +94,18 @@ func _n(dur: float) -> int:
 	return int(dur * RATE)
 
 
-## Bao hình: vào 4 ms rồi tắt dần theo hàm mũ.
-func _env(t: float, decay: float) -> float:
-	return minf(t / 0.004, 1.0) * exp(-t / maxf(decay, 0.001) * 3.0)
+## Bao hình: vào êm theo hình sin trong `attack` giây rồi tắt dần theo hàm mũ.
+func _env(t: float, decay: float, attack := 0.006) -> float:
+	var a := 1.0 if t >= attack else sin(t / attack * PI * 0.5) ** 2
+	return a * exp(-t / maxf(decay, 0.001) * 3.0)
 
 
-func _bell(f: float, decay: float, gain: float) -> PackedFloat32Array:
+func _bell(f: float, decay: float, gain: float, attack := 0.006) -> PackedFloat32Array:
 	var out := PackedFloat32Array()
 	out.resize(_n(decay * 1.6))
 	for i in out.size():
 		var t := float(i) / RATE
-		out[i] = (sin(TAU * f * t) + 0.25 * sin(TAU * f * 2.0 * t)) * _env(t, decay) * gain
+		out[i] = (sin(TAU * f * t) + 0.25 * sin(TAU * f * 2.0 * t)) * _env(t, decay, attack) * gain
 	return out
 
 
@@ -103,26 +113,26 @@ func _chime(f: float, at: float) -> PackedFloat32Array:
 	return _delay(_bell(f, 0.5, 0.13), at)
 
 
-func _sweep(f0: float, f1: float, dur: float, gain: float) -> PackedFloat32Array:
+func _sweep(f0: float, f1: float, dur: float, gain: float, attack := 0.01) -> PackedFloat32Array:
 	var out := PackedFloat32Array()
 	out.resize(_n(dur))
 	var ph := 0.0
 	for i in out.size():
 		var t := float(i) / RATE
 		ph += TAU * lerpf(f0, f1, t / dur) / RATE
-		out[i] = sin(ph) * _env(t, dur * 0.6) * gain
+		out[i] = sin(ph) * _env(t, dur * 0.6, attack) * gain
 	return out
 
 
 ## Nhiễu đã lọc thông thấp (k nhỏ = trầm hơn).
-func _hiss(k: float, dur: float, gain: float) -> PackedFloat32Array:
+func _hiss(k: float, dur: float, gain: float, attack := 0.02) -> PackedFloat32Array:
 	var out := PackedFloat32Array()
 	out.resize(_n(dur))
 	var lp := 0.0
 	for i in out.size():
 		var t := float(i) / RATE
 		lp += (_rng.randf_range(-1.0, 1.0) - lp) * k
-		out[i] = lp * 3.0 * _env(t, dur * 0.5) * gain
+		out[i] = lp * 3.0 * _env(t, dur * 0.5, attack) * gain
 	return out
 
 
