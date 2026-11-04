@@ -276,6 +276,8 @@ func _shop_lock(it: Dictionary) -> String:
 		return "Mở sau khi kéo vật cản khỏi cửa xả"
 	if it.get("unlock") == "skimmer" and not s.quests.get("skimmer", false):
 		return "Mở sau khi lắp máy vớt"
+	if it.get("unlock") == "belt" and not s.quests.get("belt", false):
+		return "Mở sau khi lắp băng chuyền"
 	return ""
 
 
@@ -285,9 +287,15 @@ func _shop_tab() -> Control:
 	for k in Data.SHOP:
 		var it: Dictionary = Data.SHOP[k]
 		var lock := _shop_lock(it)
-		var owned: bool = s.tools[k] if it.kind == "tool" else (s.upgrades[k] if it.kind == "upgrade" else (s.placed[k] or s.stock[k]))
+		var owned: bool
+		match it.kind:
+			"tool": owned = s.tools[k]
+			"upgrade": owned = s.upgrades[k]
+			"fleet": owned = s.robots.size() >= it.max
+			_: owned = s.placed[k] or s.stock[k]
+		var title: String = it.name + ((" (%d/%d)" % [s.robots.size(), it.max]) if it.kind == "fleet" else "")
 		var info := Style.vbox([
-			Style.hbox([Style.label(it.name, 18), Style.label("Hạ tầng" if it.kind == "machine" else "Thuộc đội", 12, Style.ACCENT)]),
+			Style.hbox([Style.label(title, 18), Style.label("Hạ tầng" if it.kind == "machine" else "Thuộc đội", 12, Style.ACCENT)]),
 			Style.label(it.desc, 14, Style.MUTED, true)], 4)
 		info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		var price := Style.label("%d tiền%s" % [it.price, (" + %s vật liệu" % Game.fmt_mat(it.mat)) if it.mat > 0 else ""], 15, Color("#ffd166"))
@@ -326,6 +334,8 @@ func _buy(k: String) -> void:
 			s.tool = k
 		"upgrade":
 			s.upgrades[k] = true
+		"fleet":
+			main.robots.add_robot()
 		_:
 			s.stock[k] = true
 			Game.show_hint("buy")

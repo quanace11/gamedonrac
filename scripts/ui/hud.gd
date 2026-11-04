@@ -84,7 +84,7 @@ func _ready() -> void:
 	_site_pending = Style.label("")
 	_site_pollution = Style.label("")
 	right.add_child(Style.panel(Style.vbox([Style.label("CÔNG TRÌNH", 13, Style.ACCENT), _site_bar, _site_pct, _site_pending, _site_pollution], 5)))
-	for k in ["conveyor", "skimmer"]:
+	for k in ["conveyor", "skimmer", "robots"]:
 		var l := Style.label("", 15, Style.TEXT, true)
 		var p := Style.panel(l, Style.box(Style.BG, 10, 10))
 		p.visible = false
@@ -232,7 +232,11 @@ func update(hint_text: String) -> void:
 		_site_pollution.text = "Nguồn ô nhiễm: đã kiểm soát"
 		_site_pollution.add_theme_color_override("font_color", Style.GOOD)
 
-	for k in _cards:
+	var rc: PanelContainer = _cards.robots[0]
+	rc.visible = not s.robots.is_empty()
+	if rc.visible:
+		(_cards.robots[1] as Label).text = main.robots.status()
+	for k in ["conveyor", "skimmer"]:
 		var p: PanelContainer = _cards[k][0]
 		p.visible = s.placed[k]
 		if not p.visible:

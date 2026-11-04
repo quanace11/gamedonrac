@@ -18,6 +18,8 @@ const HINTS := {
 	"crate": "Bạn đang mang thùng máy vớt. Bấm E tại băng chuyền (Nạp) hoặc bàn phân loại để đổ.",
 	"plant": "Công trình đang xử lý nguồn ô nhiễm – mặt nước sẽ trong dần.",
 	"accept": "Đủ điều kiện nghiệm thu! Mở Tab → Nghiệm thu.",
+	"automate": "Cửa hàng đã mở robot gom rác, máy hút rác và các nâng cấp tự động. Rác nhiều lắm – hãy để máy làm thay!",
+	"heap": "Đống rác chất cao: phải dọn lớp trên mới lấy được lớp dưới. Nghe nói có đồ quý bị vùi dưới đáy vài đống…",
 }
 
 var trash: Trash
@@ -74,8 +76,8 @@ func _ready() -> void:
 		{"id": "dump", "req": ["pick"], "title": func(): return "Mang giỏ về bàn phân loại (khu C) và bấm E", "at": func(): return L.table, "done": func(): return s.call().stats.dumped > 0},
 		{"id": "sort", "req": ["dump"], "title": func(): return "Phân loại và xử lý một mẻ", "at": func(): return L.table, "done": func(): return s.call().stats.manual_batches > 0},
 		{"id": "buy_net", "req": ["sort"], "title": func(): return "Mua vợt (Tab → Cửa hàng)", "done": func(): return s.call().tools.net},
-		{"id": "clear_a", "req": ["sort"], "title": func(): return "Dọn sạch khu A (%d/%d)" % [_zone("A").done, _zone("A").total], "at": func(): return zone_center("A"), "done": func(): return _zone("A").done >= _zone("A").total},
-		{"id": "part_b", "req": ["buy_net"], "title": func(): return "Vớt một nửa rác khu B (%d/%d)" % [_zone("B").done, ceili(_zone("B").total / 2.0)], "at": func(): return zone_center("B"), "done": func(): return _zone("B").done >= _zone("B").total / 2.0},
+		{"id": "clear_a", "req": ["sort"], "title": func(): return "Dọn một nửa khu A (%d/%d)" % [_zone("A").done, ceili(_zone("A").total * 0.5)], "at": func(): return zone_center("A"), "done": func(): return _zone("A").done >= _zone("A").total * 0.5},
+		{"id": "part_b", "req": ["buy_net"], "title": func(): return "Vớt 30%% rác khu B (%d/%d)" % [_zone("B").done, ceili(_zone("B").total * 0.3)], "at": func(): return zone_center("B"), "done": func(): return _zone("B").done >= _zone("B").total * 0.3},
 		{"id": "belt", "req": ["clear_a", "part_b"], "title": func(): return "Lắp băng chuyền ở khu C (phím B)" if (s.call().stock.conveyor or s.call().placed.conveyor) else "Mua băng chuyền (Tab → Cửa hàng)", "at": func(): return L.slots.conveyor, "done": func(): return s.call().placed.conveyor},
 		{"id": "auto", "req": ["belt"], "title": func(): return "Cho băng chuyền xử lý một mẻ tự động (%d/10)" % mini(10, s.call().stats.auto_items), "at": func(): return L.slots.conveyor, "done": func(): return s.call().stats.auto_items >= 10},
 		{"id": "outfall", "req": ["auto"], "title": func(): return "Dọn cửa xả, kéo %s về điểm nhận" % L.obstacle_name, "at": func(): return L.receive if machines.hooked else L.obstacle, "done": func(): return s.call().obstacle.done, "start": _grant_hook},
@@ -186,6 +188,10 @@ func update(delta: float, player_pos: Vector3) -> String:
 		Game.save_game()
 	if can_accept():
 		hint("accept")
+	if s.quests.get("belt", false):
+		hint("automate")
+	if s.quests.get("sort", false):
+		hint("heap")
 
 	# Chỉ dẫn; chỉ dẫn chờ quá 15 giây đã lỗi thời nên bỏ qua
 	if _showing != "":

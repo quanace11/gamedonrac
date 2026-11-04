@@ -70,7 +70,7 @@ func _build_held() -> void:
 	mesh_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	mesh_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 
-	for k in ["net", "hook"]:
+	for k in ["net", "hook", "vacuum"]:
 		var root := Node3D.new()
 		root.position = Vector3(0.36, -0.42, -0.5)
 		root.rotation = Vector3(0.2, 0.18, 0)
@@ -84,7 +84,13 @@ func _build_held() -> void:
 		root.add_child(pole)
 		var head := MeshInstance3D.new()
 		var tm := TorusMesh.new()
-		if k == "net":
+		if k == "vacuum":
+			# Ống hút: thân dày, miệng loe
+			pm.top_radius = 0.035; pm.bottom_radius = 0.045
+			pole.material_override = steel
+			tm.inner_radius = 0.07; tm.outer_radius = 0.1
+			head.position = Vector3(0, 0, -0.92)
+		elif k == "net":
 			tm.inner_radius = 0.17; tm.outer_radius = 0.19
 			var disc := MeshInstance3D.new()
 			var dm := CylinderMesh.new()
@@ -236,6 +242,7 @@ func update(delta: float) -> void:
 		if Input.is_action_just_pressed("tool1"): set_tool("hand")
 		if Input.is_action_just_pressed("tool2"): set_tool("net")
 		if Input.is_action_just_pressed("tool3"): set_tool("hook")
+		if Input.is_action_just_pressed("tool4"): set_tool("vacuum")
 		if _wheel != 0:
 			var owned := Data.TOOL_ORDER.filter(func(t): return s.tools[t])
 			set_tool(owned[posmod(owned.find(s.tool) + signi(_wheel), owned.size())])
@@ -314,6 +321,12 @@ func update(delta: float) -> void:
 				machines.try_hook(eye, dir, tool.reach)
 		elif target >= 0 and (_click or (tool.rate > 0.0 and Input.is_action_pressed("use") and _use_timer <= 0.0)):
 			_collect(target)
+			# Máy hút: mỗi nhịp hút thêm vài món quanh tâm ngắm
+			for k in tool.get("burst", 1) - 1:
+				var more := trash.pick(eye, dir, tool.reach, tool.radius, false)
+				if more < 0:
+					break
+				_collect(more)
 			_use_timer = tool.rate
 	_click = false
 

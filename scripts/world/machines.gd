@@ -38,6 +38,7 @@ var _tilt := 0.0
 var _slide := 0.0
 var _ghost_ok: StandardMaterial3D
 var _ghost_red: StandardMaterial3D
+var _pipe_t := 0.0
 
 
 func _s() -> Dictionary:
@@ -360,6 +361,21 @@ func _update_conveyor(delta: float) -> void:
 		c.transit.append([c.hopper.pop_front(), 0.0])
 
 
+## Nâng cấp tự động: ống dẫn máy vớt → phễu, tự xử lý đầu ra.
+func _update_automation(delta: float) -> void:
+	var s := _s()
+	var c: Dictionary = s.conveyor
+	if not s.placed.conveyor:
+		return
+	if s.upgrades.up_pipe and s.placed.skimmer and not s.skimmer.bin.is_empty() and c.hopper.size() < Data.ECON.belt_hopper:
+		_pipe_t += delta * dev_speed
+		if _pipe_t >= Data.ECON.pipe_rate:
+			_pipe_t = 0.0
+			c.hopper.append(s.skimmer.bin.pop_front())
+	if s.upgrades.up_auto_sell and (out_total() >= Data.ECON.auto_sell_at or c.blocked != ""):
+		process_outputs(true)
+
+
 func _update_skimmer(delta: float) -> void:
 	var k: Dictionary = _s().skimmer
 	if not _s().placed.skimmer or k.paused or k.bin.size() >= skim_cap():
@@ -515,7 +531,7 @@ func feed_conveyor() -> void:
 		Game.say("Phễu đầy – chờ băng chuyền chạy bớt hoặc nâng tốc độ.", "warn")
 
 
-func process_outputs() -> void:
+func process_outputs(auto := false) -> void:
 	var c: Dictionary = _s().conveyor
 	var all := []
 	for k in Data.CAT_KEYS:
@@ -525,6 +541,8 @@ func process_outputs() -> void:
 		return
 	var r := Game.process_batch(all, true)
 	Sfx.play("coin")
+	if auto:
+		return
 	Game.say("Xử lý %d món: +%d tiền, +%s vật liệu" % [all.size(), r.x, Game.fmt_mat(r.y)], "good")
 
 
@@ -720,6 +738,7 @@ func apply_build(t: Dictionary) -> void:
 func update(delta: float, t: float, cam: Vector3) -> void:
 	var s := _s()
 	_update_conveyor(delta)
+	_update_automation(delta)
 	_update_skimmer(delta)
 	_update_plant(delta)
 	_update_obstacle(delta, cam)

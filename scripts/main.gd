@@ -4,6 +4,7 @@ extends Node3D
 var level: Level
 var trash: Trash
 var machines: Machines
+var robots: Robots
 var player: Player
 var quests: Quests
 var hud: Hud
@@ -31,6 +32,10 @@ func _ready() -> void:
 	machines.trash = trash
 	add_child(machines)
 	machines.build()
+	robots = Robots.new()
+	robots.trash = trash
+	add_child(robots)
+	robots.build()
 	player = Player.new()
 	player.trash = trash
 	player.machines = machines
@@ -65,6 +70,7 @@ func _ready() -> void:
 	if Game.state.is_empty():
 		Game.state = Game.new_state("main", trash.items.size(), trash.flow_items.size())
 	trash.restore()
+	robots.sync()
 	machines.update(0.0, 0.0, Vector3.ZERO)
 	hud.visible = false
 	level.photo_cam.current = true
@@ -131,6 +137,7 @@ func start(slot: String, fresh: bool) -> void:
 		s = Game.new_state(slot, trash.items.size(), trash.flow_items.size())
 	Game.state = s
 	trash.restore()
+	robots.sync()
 	player.spawn()
 	quests.reset()
 	machines.build_mode = false
@@ -279,6 +286,8 @@ func _process(delta: float) -> void:
 		player.update(delta)
 		trash.update(delta, _clock)
 		machines.update(delta, _clock, player.cam.position)
+		robots.dev_speed = machines.dev_speed
+		robots.update(delta, _clock)
 		var hint := quests.update(delta, player.pos)
 		var grow := clampf((_clock - _grow_start) / 4.0, 0.0, 1.0) if s.accepted else 0.0
 		level.update_look(delta, trash.ratio, s.plant.progress, grow, _clock)
