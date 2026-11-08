@@ -2,7 +2,7 @@ class_name Data
 ## Toàn bộ nội dung và thông số cân bằng của bản chơi thử.
 ## Thay số ở đây để thử cân bằng, không cần sửa logic.
 
-const SAVE_VERSION := 1
+const SAVE_VERSION := 2 # 2: rác dày đặc, robot, nâng cấp tự động
 
 ## Ba nhóm phân loại.
 const CATS := {
@@ -37,8 +37,9 @@ const TOOLS := {
 	"hand": {"name": "Tay", "reach": 3.2, "radius": 0.4, "rate": 0.0},
 	"net": {"name": "Vợt", "reach": 8.6, "radius": 0.9, "rate": 0.12},
 	"hook": {"name": "Móc kéo", "reach": 9.0, "radius": 1.1, "rate": 0.0},
+	"vacuum": {"name": "Máy hút", "reach": 6.0, "radius": 1.1, "rate": 0.06, "burst": 3},
 }
-const TOOL_ORDER := ["hand", "net", "hook"]
+const TOOL_ORDER := ["hand", "net", "hook", "vacuum"]
 
 ## Cửa hàng. mat tính theo đơn vị 1/10 vật liệu.
 const SHOP := {
@@ -49,18 +50,25 @@ const SHOP := {
 	"up_basket": {"name": "Giỏ lớn (+6 ô)", "kind": "upgrade", "price": 60, "mat": 0, "desc": "Tăng sức chứa giỏ từ 10 lên 16 ô.", "unlock": "skimmer"},
 	"up_belt": {"name": "Động cơ băng chuyền", "kind": "upgrade", "price": 80, "mat": 10, "desc": "Gấp đôi tốc độ băng chuyền.", "unlock": "skimmer"},
 	"up_skim_bin": {"name": "Thùng máy vớt lớn", "kind": "upgrade", "price": 60, "mat": 10, "desc": "Thùng máy vớt chứa 40 món thay vì 20.", "unlock": "skimmer"},
+	"robot": {"name": "Robot gom rác", "kind": "fleet", "max": 3, "price": 400, "mat": 50, "desc": "Tự chạy trên bờ nhặt rác (cả trong đống rác), đầy thì tự đổ vào phễu băng chuyền. Mua tối đa 3 chiếc.", "unlock": "belt"},
+	"vacuum": {"name": "Máy hút rác", "kind": "tool", "price": 350, "mat": 20, "desc": "Giữ chuột để hút liên tục nhiều món một lúc, trên bờ lẫn dưới nước (phím 4).", "unlock": "belt"},
+	"up_basket2": {"name": "Giỏ siêu lớn (32 ô)", "kind": "upgrade", "price": 250, "mat": 20, "desc": "Giỏ chứa 32 ô – hợp với máy hút.", "unlock": "belt"},
+	"up_auto_sell": {"name": "Bộ tự xử lý đầu ra", "kind": "upgrade", "price": 200, "mat": 20, "desc": "Băng chuyền tự xử lý thùng đầu ra khi gần đầy, tiền tự cộng vào ví.", "unlock": "belt"},
+	"up_pipe": {"name": "Ống dẫn máy vớt → phễu", "kind": "upgrade", "price": 150, "mat": 20, "desc": "Rác máy vớt gom được tự chảy vào phễu băng chuyền, không cần mang thùng.", "unlock": "skimmer"},
 }
 
 const ECON := {
 	"start_money": 100,
-	"basket": 10, "basket_up": 16,
+	"basket": 10, "basket_up": 16, "basket_up2": 32,
 	"accept_ratio": 0.9,
 	"accept_bonus_money": 300, "accept_bonus_mat": 50,
 	"obstacle_money": 60, "obstacle_mat": 30,
 	"belt_speed": 1.0, "belt_travel": 3.0, "belt_hopper": 40, "belt_out": 15,
 	"skim_rate": 0.9, "skim_bin": 20, "skim_bin_up": 40, "skim_radius": 3.2,
 	"plant_duration": 90.0,
-	"flow_interval": 2.4, "flow_speed": 0.75,
+	"flow_interval": 1.2, "flow_speed": 0.75,
+	"robot_speed": 2.2, "robot_cap": 12, "robot_reach": 1.7, "robot_pick": 0.35,
+	"pipe_rate": 0.4, "auto_sell_at": 10,
 	"autosave": 30.0,
 }
 
@@ -90,31 +98,37 @@ const ZONES := [
 	{"id": "E", "name": "Khu E – Vị trí máy vớt", "x0": 29.0, "x1": 40.0},
 ]
 
-## Nhóm rác: area = walk | steps | slope | water | pile | flow. Tổng 280 món ≈ 28 mẻ chuẩn.
+## Nhóm rác: area = walk | steps | slope | water | heap | pile | flow. Tổng khoảng 1.000 món.
+## heap/pile: đống rác cao (c: tâm, r: bán kính, h: chiều cao). Phải dọn lớp trên mới lấy được lớp dưới.
 const TRASH_GROUPS := [
-	{"zone": "A", "n": 22, "area": "walk", "x": Vector2(-39, -22)},
-	{"zone": "A", "n": 12, "area": "steps", "x": Vector2(-35.5, -24.5)},
-	{"zone": "A", "n": 8, "area": "water", "x": Vector2(-35, -25), "z": Vector2(2.7, 3.7)},
-	{"zone": "B", "n": 10, "area": "slope", "x": Vector2(-21.5, -8.5)},
-	{"zone": "B", "n": 28, "area": "water", "x": Vector2(-21.5, -8.5), "z": Vector2(1.4, 4.6)},
-	{"zone": "C", "n": 10, "area": "walk", "x": Vector2(-8, 6)},
-	{"zone": "C", "n": 8, "area": "water", "x": Vector2(-8, 6), "z": Vector2(1.4, 4.6)},
-	{"zone": "T", "n": 10, "area": "walk", "x": Vector2(6, 17)},
-	{"zone": "T", "n": 6, "area": "slope", "x": Vector2(6, 16.5)},
-	{"zone": "D", "n": 40, "area": "pile"},
-	{"zone": "D", "n": 10, "area": "water", "x": Vector2(17.5, 28.5), "z": Vector2(1.6, 3.4)},
-	{"zone": "E", "n": 10, "area": "walk", "x": Vector2(29, 39.5)},
-	{"zone": "E", "n": 6, "area": "slope", "x": Vector2(29.5, 39.5)},
-	{"zone": "D", "n": 100, "area": "flow"},
+	{"zone": "A", "n": 40, "area": "walk", "x": Vector2(-39, -22)},
+	{"zone": "A", "n": 24, "area": "steps", "x": Vector2(-35.5, -24.5)},
+	{"zone": "A", "n": 20, "area": "water", "x": Vector2(-35, -25), "z": Vector2(2.7, 3.7)},
+	{"zone": "A", "n": 110, "area": "heap", "c": Vector2(-30.5, 11.6), "r": 2.0, "h": 1.3},
+	{"zone": "B", "n": 20, "area": "slope", "x": Vector2(-21.5, -8.5)},
+	{"zone": "B", "n": 70, "area": "water", "x": Vector2(-21.5, -8.5), "z": Vector2(1.4, 4.6)},
+	{"zone": "B", "n": 90, "area": "heap", "c": Vector2(-15.0, 10.8), "r": 1.8, "h": 1.2},
+	{"zone": "C", "n": 20, "area": "walk", "x": Vector2(-8, 6)},
+	{"zone": "C", "n": 16, "area": "water", "x": Vector2(-8, 6), "z": Vector2(1.4, 4.6)},
+	{"zone": "T", "n": 20, "area": "walk", "x": Vector2(6, 17)},
+	{"zone": "T", "n": 12, "area": "slope", "x": Vector2(6, 16.5)},
+	{"zone": "T", "n": 70, "area": "heap", "c": Vector2(14.0, 13.6), "r": 1.5, "h": 1.0},
+	{"zone": "D", "n": 90, "area": "pile", "c": Vector2(23, 5.1), "r": 2.1, "h": 1.0},
+	{"zone": "D", "n": 20, "area": "water", "x": Vector2(17.5, 28.5), "z": Vector2(1.6, 3.4)},
+	{"zone": "E", "n": 24, "area": "walk", "x": Vector2(29, 39.5)},
+	{"zone": "E", "n": 12, "area": "slope", "x": Vector2(29.5, 39.5)},
+	{"zone": "E", "n": 110, "area": "heap", "c": Vector2(36.0, 12.0), "r": 2.0, "h": 1.3},
+	{"zone": "D", "n": 200, "area": "flow"},
 ]
 
 ## Đồ sưu tầm (mục tiêu tự chọn, đếm riêng).
 const COLLECTIBLES := [
 	{"name": "Vịt cao su", "model": "rubber_duck_toy", "pos": Vector3(-38.5, -0.9, 4.4)},
-	{"name": "Đồng hồ quả quýt", "model": "pocket_watch", "pos": Vector3(-4.6, 0.0, 7.6)},
-	{"name": "La bàn cổ", "model": "seadogs_compass", "pos": Vector3(28.4, -0.6, 4.4)},
+	# buried: nằm dưới đáy đống rác, chỉ lấy được khi đã dọn hết rác phủ lên
+	{"name": "Đồng hồ quả quýt", "model": "pocket_watch", "pos": Vector3(-15.0, 0.0, 10.8), "buried": true},
+	{"name": "La bàn cổ", "model": "seadogs_compass", "pos": Vector3(36.0, 0.0, 12.0), "buried": true},
 	{"name": "Vỏ ốc biển", "model": "lambis_shell", "pos": Vector3(39.4, 0.0, 14.6)},
-	{"name": "Chú lùn làm vườn", "model": "garden_gnome", "pos": Vector3(15.5, 0.0, 14.7)},
+	{"name": "Chú lùn làm vườn", "model": "garden_gnome", "pos": Vector3(14.0, 0.0, 13.6), "buried": true},
 ]
 
 ## Bản đồ chiến dịch. Chỉ màn 1 chơi được trong bản thử.
@@ -133,7 +147,7 @@ const ACTIONS := {
 	"forward": ["Tiến", KEY_W], "back": ["Lùi", KEY_S], "left": ["Sang trái", KEY_A], "right": ["Sang phải", KEY_D],
 	"sprint": ["Chạy nhanh", KEY_SHIFT], "interact": ["Tương tác", KEY_E], "menu": ["Nhiệm vụ & nâng cấp", KEY_TAB],
 	"build": ["Chế độ đặt máy", KEY_B], "tool1": ["Dụng cụ 1", KEY_1], "tool2": ["Dụng cụ 2", KEY_2],
-	"tool3": ["Dụng cụ 3", KEY_3], "dev": ["Chế độ phát triển", KEY_QUOTELEFT],
+	"tool3": ["Dụng cụ 3", KEY_3], "tool4": ["Dụng cụ 4", KEY_4], "dev": ["Chế độ phát triển", KEY_QUOTELEFT],
 }
 
 
